@@ -1,0 +1,58 @@
+rules_version = '2';
+
+// Bu dosyayı Firebase Console > Firestore Database > Rules sekmesine
+// YAPIŞTIRIP "Publish" demen yeterli. "Test mode" (30 gün sonra kapanan,
+// o zamana kadar herkese açık kurallar) yerine bunu kullanmalısın —
+// yoksa herkes herkesin verisini okuyup değiştirebilir.
+//
+// NOT (bilerek basit tutulan kısım): `matchmaking_queue` koleksiyonunda
+// eşleştirme mekanizmasının çalışması için, giriş yapmış HERHANGİ bir
+// kullanıcının başka birinin kuyruk kaydını güncelleyebilmesi gerekiyor
+// (biri seni eşleştirdiğinde senin `matchId` alanını o yazıyor). Bu,
+// Cloud Functions olmadan (ücretsiz plan) mümkün olan en güvenli hali.
+// İleride sunucu taraflı (Cloud Functions) bir eşleştirici eklenirse bu
+// kısım daha sıkı hale getirilebilir.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Her oyuncu sadece KENDİ verisini (altın, kartlar, seviyeler, diziliş,
+    // profil, ayarlar) değiştirebilir. OKUMA ise herkese (giriş yapmış
+    // olmak kaydıyla) açık olmalı — eşleşme sırasında RAKİBİN dizilimini/
+    // kart seviyelerini okuyabilmemiz gerekiyor (bkz. match_state_builder.dart).
+    // Bu satır önceden yanlışlıkla "sadece kendin okuyabilirsin" şeklindeydi
+    // ve eşleşmenin HER ZAMAN başarısız olmasına sebep oluyordu.
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Eşleşme kuyruğu.
+    match /matchmaking_queue/{queueUid} {
+      // Aday ararken tüm kuyruğu taramak gerekiyor.
+      allow read: if request.auth != null;
+      // Sadece kendi kaydını oluşturabilir.
+      allow create: if request.auth != null && request.auth.uid == queueUid;
+      // Sahibi her zaman kendi kaydını silebilir. BAŞKA bir oyuncu ise
+      // SADECE kayıt "hayalet" (joinedAt üzerinden 90 saniyeden eski)
+      // olduğunda silebilir — uygulaması kapanan/çöken oyuncuların
+      // kaydının kuyrukta sonsuza dek kalıp herkesin eşleşmesini
+      // bozmasını önler (bkz. matchmaking_service.dart: _isStale).
+      allow delete: if request.auth != null &&
+        (request.auth.uid == queueUid ||
+         (resource.data.joinedAt != null &&
+          request.time > resource.data.joinedAt + duration.value(90, 's')));
+      // matchId alanını BAŞKA bir oyuncu da (bizi eşleştirirken) yazabilmeli.
+      allow update: if request.auth != null;
+    }
+
+    // Maçlar: sadece iki katılımcı (whiteUid / blackUid) okuyup yazabilir.
+    match /matches/{matchId} {
+      allow create: if request.auth != null &&
+        (request.resource.data.whiteUid == request.auth.uid ||
+         request.resource.data.blackUid == request.auth.uid);
+      allow read, update: if request.auth != null &&
+        (resource.data.whiteUid == request.auth.uid ||
+         resource.data.blackUid == request.auth.uid);
+    }
+  }
+}
