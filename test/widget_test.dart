@@ -13,5 +13,5 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationDestination), findsNWidgets(4));
-  }, skip: 'UI navigation updated');
+  }, skip: true);
 }
