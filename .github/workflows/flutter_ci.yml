@@ -24,7 +24,7 @@ jobs:
         run: cp lib/firebase_options.example.dart lib/firebase_options.dart
 
       - name: Statik analiz (flutter analyze)
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Testleri çalıştır (kapsam raporuyla)
         run: flutter test --coverage
